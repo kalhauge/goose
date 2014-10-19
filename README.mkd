@@ -1,0 +1,5 @@
+GoOSe
+=====
+
+An virtual machine executor written in python. Can both be used as a library and
+an executable.
