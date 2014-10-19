@@ -9,8 +9,7 @@ Simple to use and change.
 
 """
 
-from goose import Box
-
+from goose import Box, vbm
 
 def vms():
     for x in vbm.vms():
