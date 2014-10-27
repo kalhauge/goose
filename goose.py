@@ -88,14 +88,15 @@ def run_ssh(port, login, command, identity_file=None):
 
 class SSHHandler:
 
-    def __init__(self, box, user, identity, close_on_end=True):
+    def __init__(self, box, user, identity, close_on_end=True, port=None):
         self.box = box
         self.user = user
         self.identity = identity
         self.close_on_end = close_on_end
+        self.port = port
 
     def __enter__(self):
-        self.box.start()
+        self.box.start(self.port)
         return self
 
     def __exit__(self, type, value, traceback):
@@ -220,7 +221,8 @@ class Box:
             if not getattr(self, local) == attr:
                 self.modify(**{name:attr})
                 setattr(self, local, attr)
-    
+        return func
+
     name = property(lambda self: self._name, _set('name'))
     cpus = property(lambda self: self._cpus, _set('cpus'))
     memory = property(lambda self: self._memory, _set('memory'))

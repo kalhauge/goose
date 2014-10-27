@@ -19,8 +19,9 @@ class Context():
         self.reuse = True
         self.close_after = True
         self.port = None
-        self.cpus = 2
-        self.memory = 1024
+        self.cpus = None
+        self.memory = None
+        self.email = None
 
 class Parser:
 
@@ -82,8 +83,14 @@ def get_box(context):
             box.destroy()
             box = Box.load(context.baseimage.filename)
             box.name = context.baseimage.name
-    box.cpus = config.cpus
-    box.memory = config.memory
+    if context.cpus: 
+        box.cpus = context.cpus
+    else:
+        log.debug('No CPUs set, keeping: %s', box.cpus)
+    if context.memory: 
+        box.memory = context.memory
+    else:
+        log.debug('No memory set, keeping: %s', box.memory)
     log.info('Found box %r', box.name)
     return box
     
@@ -101,7 +108,8 @@ def main(commands):
     box = get_box(context) 
     
     with box.get_ssh_handler(
-        context.user, context.identity, context.close_after
+        context.user, context.identity, context.close_after, 
+        port=context.port
     ) as ssh:
         log.info('Runing ssh on %r at port %r.' % (ssh.box.name, ssh.box.port))
         for require in context.require:
@@ -116,6 +124,7 @@ def main(commands):
         )
         for line in out:
             print(line[:-1])
+        log.info('Done')
 
 
 if __name__ ==  '__main__':
