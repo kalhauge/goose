@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""
+GO OS Execute
+
+A simple tool for creating copies of virtual boxes, opening them and
+destroying them.  
+Simple to use and change.
+
+"""
+
+from goose import Box, vbm
+
+
+def vms():
+    for x in vbm.vms():
+        print(x)
+    return None
+
+def running():
+    for x in vbm.running():
+        print(x)
+    return None
+
+def find(name: str):
+    return Box.find(name)
+
+def destroy(name: str):
+    """
+    Destroys the virtual machine given a name.
+    """
+    box = Box.find(name)
+    if box.is_running():
+        box.stop()
+    box.destroy()
+
+def login(
+    name: str, 
+    login: str,
+    id: str=None, 
+):
+    box = Box.find(name)
+    if box.is_running():
+        box.ssh(login, [], id)
+    else:
+        with box:
+            box.ssh(login, [], id)
+
+def load(
+    filename: str,
+    name: str=None
+):
+    if name and name in vbm.vms():
+        raise ValueError('%r already started' % name)
+    box = Box.load(filename)
+    if name: 
+        box.name = name
+
+def start(
+    name: str,
+    filename: str=None,
+    force: bool=False,
+    port: int=None,
+):
+    try:
+        box = Box.find(name)
+        if force:
+            box.destroy()
+            box = Box.load(filename)
+            box.name = name
+        elif box.is_running():
+            return box
+    except ValueError:
+        box = Box.load(filename)
+        box.name = name
+
+    box.start(port)
+
+    return box
+
+def stop(name: str):
+    Box.find(name).stop()
+
+INTERFACES = [
+    find,
+    login,
+    vms,
+    running,
+    start,
+    stop,
+    destroy
+]
+
+def main():
+    from argparse import ArgumentParser
+    from inspect import getfullargspec 
+
+    parser = ArgumentParser('GoOSE')
+    group = parser.add_subparsers(help="Commands:")
+
+    for func in INTERFACES:
+        subparser = group.add_parser(func.__name__,help=func.__doc__)
+        subparser.set_defaults(func=func)
+
+        specs = getfullargspec(func)
+        no_position_args = len(specs.args) - (
+            len(specs.defaults) if specs.defaults else 0
+        )
+        for i, name in enumerate(specs.args):
+            if i < no_position_args:
+                subparser.add_argument(name, type=specs.annotations[name])
+            else:
+                default = specs.defaults[i - no_position_args]
+                anotation = specs.annotations[name]
+                if anotation == bool:
+                    action = 'store_true' if not default else 'store_false'
+                    subparser.add_argument(
+                        '--' + name, action=action,
+                        default = default
+                    )
+                else:
+                    subparser.add_argument(
+                        '--' + name, type=anotation,
+                        default = default
+                    )
+
+    args = vars(parser.parse_args())
+    func = args['func']
+    del args['func']
+    try:
+        result = func(**args)
+    except ValueError as e:
+        print(e)
+        raise
+    if not result is None:
+        print(result)
+
+if __name__ == '__main__':
+    main()
+

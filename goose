@@ -1,98 +1,117 @@
-#!env python3
-"""
-GO OS Execute
-
-A simple tool for creating copies of virtual boxes, opening them and
-destroying them. 
-
-Simple to use and change.
-
-"""
+#!/usr/bin/env python3 
 
 from goose import Box, vbm
+import sys
+import os
+import io
 
-def vms():
-    for x in vbm.vms():
-        print(x)
-    return None
+from collections import namedtuple
 
-def destroy(name: str):
-    """
-    Destroys the virtual machine given a name.
-    """
-    box = Box(name)
-    if box.is_loaded():
-        if box.is_running():
-            box.stop()
-        box.destroy()
+import logging
 
-def ssh(
-    name: str, 
-    login: str, 
-    command: str='sh',
-    identity_file: str=None, 
-):
-    with Box.find(name) as box:
-        box.ssh(login, command, identity_file)
+logging.basicConfig(level=logging.DEBUG)
+log = logging.getLogger('goose')
 
-def start(
-    filename: str, 
-    port: int=None,
-    timeout: float=3.0   
-):
-    box = Box.load(filename)
-    box.start(port)
+class Context():
+    
+    def __init__(self):
+        self.require = list()
+        self.reuse = True
+        self.close_after = True
+        self.port = None
 
+class Parser:
+
+    def __init__(self):
+        self.context = Context()
+
+    def baseimage(self, name, filename):
+        self.context.baseimage = BaseImage(name, filename)
+
+    def require(self, name, location):
+        self.context.require.append(Require(name, os.path.abspath(location)))
+        if not os.path.exists(location):
+            raise ValueError('%r does not exist' % location)
+   
+    def port(self, port):
+        self.context.port = int(port)
+
+    def user(self, name):
+        self.context.user = name
+
+    def identity(self, filename):
+        self.context.identity = os.path.abspath(filename)
+        if not os.path.exists(filename):
+            raise ValueError('%r does not exist' % filename)
+
+    def reuse(self, boolean):
+        self.context.reuse = bool(boolean == 'True')
+    
+    def close_after(self, boolean):
+        self.context.close_after = bool(boolean == 'True')
+
+    def parse(self, name, *args):
+        getattr(self, name)(*args)
+            
+
+BaseImage = namedtuple('BaseImage', ['name', 'filename'])
+Require = namedtuple('Require', ['path', 'location'])
+
+def get_box(context):
+    try:
+        box = Box.find(context.baseimage.name)
+    except ValueError:
+        log.debug('Box %r not started, loading from filename %r', *context.baseimage)
+        box = Box.load(context.baseimage.filename)
+        box.name = context.baseimage.name
+    else:
+        if not context.reuse:
+            log.debug(
+                'Box %r already loaded, destroying and loading again',
+                context.baseimage.name)
+            if box.is_running():
+                box.stop()
+            box.destroy()
+            box = Box.load(context.baseimage.filename)
+            box.name = context.baseimage.name
+
+    log.info('Found box %r', box.name)
     return box
+    
+def main(commands):
+    parser = Parser()
+    remote_commands = []
+    for command in commands:
+        command = command.strip()
+        if command.startswith('#goose'):
+            args = command.split()
+            parser.parse(*args[1:])
+        remote_commands += [command] 
 
-
-INTERFACES = [
-    ssh,
-    vms,
-    start,
-    destroy
-]
-
-def main():
-    from argparse import ArgumentParser
-    from inspect import getfullargspec 
-
-    parser = ArgumentParser('GoOSE')
-    group = parser.add_subparsers(help="Commands:")
-
-    for func in INTERFACES:
-        subparser = group.add_parser(func.__name__,help=func.__doc__)
-        subparser.set_defaults(func=func)
-
-        specs = getfullargspec(func)
-        no_position_args = len(specs.args) - (
-            len(specs.defaults) if specs.defaults else 0
-        )
-        for i, name in enumerate(specs.args):
-            if i < no_position_args:
-                subparser.add_argument(name, type=specs.annotations[name])
+    context = parser.context
+    box = get_box(context) 
+    
+    with box.get_ssh_handler(
+        context.user, context.identity, context.close_after
+    ) as ssh:
+        log.info('Runing ssh on %r at port %r.' % (ssh.box.name, ssh.box.port))
+        for require in context.require:
+            if not ssh.exists(require.path):
+                log.debug('%r does not exist copying from %r', *require)
+                ssh.copy(require.location, require.path)
             else:
-                default = specs.defaults[i - no_position_args]
-                anotation = specs.annotations[name]
-                if anotation == bool:
-                    action = 'store_true' if not default else 'store_false'
-                    subparser.add_argument(
-                        '--' + name, action=action,
-                        default = default
-                    )
-                else:
-                    subparser.add_argument(
-                        '--' + name, type=anotation,
-                        default = default
-                    )
+                log.debug('%r does allready exsits', require.path)
+        out = ssh.run(
+            'tee /tmp/last_cmds.sh | /bin/bash', 
+            stdin=remote_commands
+        )
+        for line in out:
+            print(line[:-1])
 
-    args = vars(parser.parse_args())
-    func = args['func']
-    del args['func']
-    result = func(**args)
-    if not result is None:
-        print(result)
 
-if __name__ == '__main__':
-    main()
-
+if __name__ ==  '__main__':
+    if len(sys.argv) == 2:
+        with open(sys.argv[1]) as f:
+            main(f)
+    else:
+        main(sys.stdin)
