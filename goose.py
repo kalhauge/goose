@@ -156,9 +156,11 @@ class SSHHandler:
 
 class Box:
 
-    def __init__(self, name, port=None):
+    def __init__(self, name, port=None, cpus=None, memory=None):
         self._name = name
         self._port = port
+        self._cpus = cpus
+        self._memory = memory
 
     def start(self, port=None):
         if not self.is_running():
@@ -195,10 +197,6 @@ class Box:
     def is_loaded(self):
         return self.name in vbm.vms()
 
-    def set_name(self, name):
-        self.modify(name=name)
-        self._name = name
-
     def sync(self):
         info = vbm.info(self.name)
         port = None
@@ -212,9 +210,20 @@ class Box:
             else:
                 break
         self._port = port
+        self._memory = int(info['memory'])
+        self._cpus = int(info['cpus'])
         return self
-
-    name = property(lambda self: self._name, set_name)
+  
+    def _set(name):
+        def func(self, attr):
+            local = '_' + name
+            if not getattr(self, local) == attr:
+                self.modify(**{name:attr})
+                setattr(self, local, attr)
+    
+    name = property(lambda self: self._name, _set('name'))
+    cpus = property(lambda self: self._cpus, _set('cpus'))
+    memory = property(lambda self: self._memory, _set('memory'))
 
     def set_port(self, port):
         if port == self._port:
@@ -230,7 +239,7 @@ class Box:
     port = property(lambda self: self._port, set_port)
 
     def __repr__(self):
-        return 'Box(name={0.name!r}, port={0.port!r})'.format(self)
+        return 'Box(name={0.name!r}, port={0.port!r}, cpus={0.cpus!r}, memory={0.memory!r})'.format(self)
 
     def __enter__(self):
         return self.start()

@@ -19,6 +19,8 @@ class Context():
         self.reuse = True
         self.close_after = True
         self.port = None
+        self.cpus = 2
+        self.memory = 1024
 
 class Parser:
 
@@ -38,6 +40,12 @@ class Parser:
 
     def user(self, name):
         self.context.user = name
+    
+    def cpus(self, number):
+        self.context.cpus = number
+    
+    def memory(self, amount):
+        self.context.memory = amount
 
     def identity(self, filename):
         self.context.identity = os.path.abspath(filename)
@@ -74,7 +82,8 @@ def get_box(context):
             box.destroy()
             box = Box.load(context.baseimage.filename)
             box.name = context.baseimage.name
-
+    box.cpus = config.cpus
+    box.memory = config.memory
     log.info('Found box %r', box.name)
     return box
     
