@@ -7,6 +7,7 @@ from subprocess import Popen, call, check_output, PIPE, CalledProcessError, STDO
 from functools import partial
 
 from random import randrange
+import Time
 import threading
 import re
 import time
@@ -74,21 +75,9 @@ class VBoxMangage:
 
 vbm = VBoxMangage(os.environ.get('VBOX_MANAGE_CMD', '/usr/bin/vboxmanage'))
 
-def run_ssh(port, login, command, identity_file=None):
-    cmd = (
-        'ssh -p {port}'
-        ' -o StrictHostKeyChecking=no' 
-        ' -o UserKnownHostsFile=/dev/null'
-        ' -o LogLevel=quiet'
-    ).format(port=port)
-    if identity_file: cmd += ' -i {}'.format(identity_file)
-    cmd += ' {}@127.0.0.1 '.format(login)
-    cmd += ' '.join(command)
-    call(cmd, shell=True)
-
 class SSHHandler:
 
-    def __init__(self, box, user, identity, close_on_end=True, port=None):
+    def __init__(self, box, user, identity, close_on_end=0, port=None):
         self.box = box
         self.user = user
         self.identity = identity
@@ -101,6 +90,7 @@ class SSHHandler:
 
     def __exit__(self, type, value, traceback):
         if self.close_on_end:
+            Time.wait(self.close_on_end)
             self.box.stop()
 
     def run(self, command, stdin=None):
@@ -142,6 +132,23 @@ class SSHHandler:
             to=to
         )
         return check_output(cmd, universal_newlines=True, shell=True)
+    
+    def fetch(self, to, from_):
+        cmd = (
+            'scp -r -P {port}'
+            ' -o StrictHostKeyChecking=no' 
+            ' -o UserKnownHostsFile=/dev/null'
+            ' -o LogLevel=quiet'
+            ' -i {identity}'
+            ' {user}@127.0.0.1:{from_} {to}'
+        ).format(
+            port=self.box.port,
+            identity=self.identity,
+            user=self.user, 
+            to=to,
+            from_=from_
+        )
+        return check_output(cmd, universal_newlines=True, shell=True)
 
     def exists(self, remotefile):
         cmd = '[ -e {} ] && echo -n "True" || echo -n "False"'.format(remotefile)
@@ -154,6 +161,18 @@ class SSHHandler:
             'identity={0.identity!r}, ' 
             'close_on_end={0.close_on_end})'
         ).format(self)
+
+def run_ssh(port, login, command, identity_file=None):
+    cmd = (
+        'ssh -p {port}'
+        ' -o StrictHostKeyChecking=no' 
+        ' -o UserKnownHostsFile=/dev/null'
+        ' -o LogLevel=quiet'
+    ).format(port=port)
+    if identity_file: cmd += ' -i {}'.format(identity_file)
+    cmd += ' {}@127.0.0.1 '.format(login)
+    cmd += ' '.join(command)
+    call(cmd, shell=True)
 
 class Box:
 

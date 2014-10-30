@@ -12,12 +12,17 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('goose')
 
+def str2bool(v):
+  return v.lower() in ("yes", "true", "t", "1")
+
 class Context():
     
     def __init__(self):
         self.require = list()
+        self.produces = list()
         self.reuse = True
-        self.close_after = True
+        self.shutdown_after = 0
+        self.export = None
         self.port = None
         self.cpus = None
         self.memory = None
@@ -35,7 +40,10 @@ class Parser:
         self.context.require.append(Require(name, os.path.abspath(location)))
         if not os.path.exists(location):
             raise ValueError('%r does not exist' % location)
-   
+
+    def produce(self, name, location):
+        self.context.produces.append(Produce(name, os.path.abspath(location)))
+    
     def port(self, port):
         self.context.port = int(port)
 
@@ -54,10 +62,13 @@ class Parser:
             raise ValueError('%r does not exist' % filename)
 
     def reuse(self, boolean):
-        self.context.reuse = bool(boolean == 'True')
+        self.context.reuse = str2bool(boolean) 
     
-    def close_after(self, boolean):
-        self.context.close_after = bool(boolean == 'True')
+    def shutdown_after(self, time):
+        self.context.close_after = int(time) 
+
+    def export(self, path):
+        self.context.export = os.path.abspath(path)
 
     def parse(self, name, *args):
         getattr(self, name)(*args)
@@ -65,6 +76,7 @@ class Parser:
 
 BaseImage = namedtuple('BaseImage', ['name', 'filename'])
 Require = namedtuple('Require', ['path', 'location'])
+Require = namedtuple('Produce', ['path', 'location'])
 
 def get_box(context):
     try:
@@ -108,22 +120,41 @@ def main(commands):
     box = get_box(context) 
     
     with box.get_ssh_handler(
-        context.user, context.identity, context.close_after, 
+        context.user, context.identity, context.shutdown_after, 
         port=context.port
     ) as ssh:
         log.info('Runing ssh on %r at port %r.' % (ssh.box.name, ssh.box.port))
+        
         for require in context.require:
             if not ssh.exists(require.path):
                 log.debug('%r does not exist copying from %r', *require)
                 ssh.copy(require.location, require.path)
             else:
                 log.debug('%r does allready exsits', require.path)
+
         out = ssh.run(
             'tee /tmp/last_cmds.sh | /bin/bash', 
             stdin=remote_commands
         )
+
         for line in out:
             print(line[:-1])
+
+        log.info('Copying over required files')
+
+        for produce in context.produce:
+            if not ssh.exist(produce.path):
+                log.error('%r does not exist.. %r not created.', *require)
+            else:
+                log.debug('Copying %s to %s.', *require)
+                ssh.fetch(require.location, require.path)
+
+        if context.shutdown_after:
+            log.info('Shuting down VirtualMachine')
+            out = ssh.run(
+                'sudo shutdown now', 
+            )
+
         log.info('Done')
 
 
