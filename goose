@@ -13,13 +13,12 @@ logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('goose')
 
 def str2bool(v):
-  return v.lower() in ("yes", "true", "t", "1")
-
+  return v.lower() in ("yes", "true", "t", "1") 
 class Context():
     
     def __init__(self):
         self.require = list()
-        self.produces = list()
+        self.produce = list()
         self.reuse = True
         self.shutdown_after = 0
         self.export = None
@@ -42,7 +41,7 @@ class Parser:
             raise ValueError('%r does not exist' % location)
 
     def produce(self, name, location):
-        self.context.produces.append(Produce(name, os.path.abspath(location)))
+        self.context.produce.append(Produce(name, os.path.abspath(location)))
     
     def port(self, port):
         self.context.port = int(port)
@@ -155,7 +154,11 @@ def main(commands):
                 'sudo shutdown now', 
             )
 
-        log.info('Done')
+    if context.export:
+        log.info('Exporting the box to %r', context.export)
+        box.export(contex.export)
+    
+    log.info('Done')
 
 
 if __name__ ==  '__main__':

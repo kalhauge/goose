@@ -3,11 +3,11 @@ This is the library part of GoOSE.
 
 """
 
-from subprocess import Popen, call, check_output, PIPE, CalledProcessError, STDOUT
+from subprocess import Popen, call, check_output, PIPE, CalledProcessError, STDOUT, check_call
 from functools import partial
 
 from random import randrange
-import Time
+import time
 import threading
 import re
 import time
@@ -52,6 +52,9 @@ class VBoxMangage:
         return function
 
     def import_(self, filename):
+        filename = os.path.realpath(filename)
+        if not os.path.exists(filename): 
+            raise ValueError('{!r} does not exist'.format(filename))
         output = self.__getattr__('import')(filename)
         mo = re.search(r'Suggested VM name "(.+)"', output, re.MULTILINE)
         return mo.group(1) if mo else None
@@ -93,8 +96,8 @@ class SSHHandler:
             Time.wait(self.close_on_end)
             self.box.stop()
 
-    def run(self, command, stdin=None):
-        cmd = (
+    def ssh_command(self, command):
+        return (
             'ssh -p {port}'
             ' -o StrictHostKeyChecking=no' 
             ' -o UserKnownHostsFile=/dev/null'
@@ -107,6 +110,9 @@ class SSHHandler:
             user=self.user, 
             cmd=command
         )
+    def run(self, command, stdin=None):
+        cmd = self.ssh_command(command)
+
         if stdin:
             p = Popen(cmd, universal_newlines=True, stdin=PIPE, stdout=PIPE, shell=True)
             for line in stdin:
@@ -116,23 +122,53 @@ class SSHHandler:
         else:
             return check_output(cmd, universal_newlines=True, shell=True)
 
-    def copy(self, from_, to):
-        cmd = (
-            'scp -r -P {port}'
-            ' -o StrictHostKeyChecking=no' 
-            ' -o UserKnownHostsFile=/dev/null'
-            ' -o LogLevel=quiet'
-            ' -i {identity}'
-            ' {from_} {user}@127.0.0.1:{to}'
-        ).format(
-            port=self.box.port,
-            identity=self.identity,
-            user=self.user, 
-            from_=from_,
-            to=to
-        )
-        return check_output(cmd, universal_newlines=True, shell=True)
-    
+    def copy(self, from_, to, use_cache=True):
+        if os.path.isdir(from_):
+            from tarfile import TarFile
+            if not os.path.exists('goose_cache'):
+                os.mkdir('goose_cache')
+
+            filename = to.replace('/', '_')
+
+            cache_file = os.path.join('goose_cache', filename + '.tar.gz')
+            if not os.path.exists(cache_file) or not use_cache:
+                tar = TarFile.open(cache_file, 'w:gz')
+                tar.add(os.path.realpath(from_), arcname='.')
+                tar.close()
+            
+            cmd = self.ssh_command('mkdir -p {0}; tar zxf - -C {0}'.format(to))
+            p = Popen(cmd, stdin=PIPE, shell=True)
+            with open(cache_file,'rb') as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(0, os.SEEK_SET)
+                b = f.read(10240)
+                while b:
+                    sys.stderr.write('Progress: {:0.2f}%\r'.format(f.tell()/size * 100))
+                    sys.stderr.flush()
+                    p.stdin.write(b)
+                    b = f.read(10240)
+                p.stdin.close()
+                sys.stderr.write('\n')
+            p.wait()
+            return p.poll()
+        else:
+            cmd = (
+                'scp -r -P {port}'
+                ' -o StrictHostKeyChecking=no' 
+                ' -o UserKnownHostsFile=/dev/null'
+                ' -o LogLevel=quiet'
+                ' -i {identity}'
+                ' {from_} {user}@127.0.0.1:{to}'
+            ).format(
+                port=self.box.port,
+                identity=self.identity,
+                user=self.user, 
+                to=to,
+                from_=from_
+            )
+            return check_call(cmd, universal_newlines=True, shell=True)
+
     def fetch(self, to, from_):
         cmd = (
             'scp -r -P {port}'
@@ -210,6 +246,9 @@ class Box:
             raise ValueError('VirtualMachine running, can not alter values')
         vbm.modifyvm(self.name, **kwargs)
         return self
+
+    def export(self, output):
+        vbm.export(self.name, output=output)
 
     def is_running(self):
         return self.name in vbm.running()
