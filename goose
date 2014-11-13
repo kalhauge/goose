@@ -20,7 +20,7 @@ class Context():
         self.require = list()
         self.produce = list()
         self.reuse = True
-        self.shutdown_after = 0
+        self.shutdown = 0
         self.export = None
         self.port = None
         self.cpus = None
@@ -63,8 +63,8 @@ class Parser:
     def reuse(self, boolean):
         self.context.reuse = str2bool(boolean) 
     
-    def shutdown_after(self, time):
-        self.context.close_after = int(time) 
+    def shutdown(self, time):
+        self.context.shutdown = int(time) 
 
     def export(self, path):
         self.context.export = os.path.abspath(path)
@@ -115,11 +115,17 @@ def main(commands):
             parser.parse(*args[1:])
         remote_commands += [command] 
 
+    for arg in sys.args:
+        if args.startswith('--'):
+            key, value = args[2:].split('=')
+            parser.parse(key, *value.split(','))
+
     context = parser.context
+
     box = get_box(context) 
     
     with box.get_ssh_handler(
-        context.user, context.identity, context.shutdown_after, 
+        context.user, context.identity, context.shutdown, 
         port=context.port
     ) as ssh:
         log.info('Runing ssh on %r at port %r.' % (ssh.box.name, ssh.box.port))
@@ -148,11 +154,9 @@ def main(commands):
                 log.debug('Copying %s to %s.', *require)
                 ssh.fetch(require.location, require.path)
 
-        if context.shutdown_after:
+        if context.shutdown:
             log.info('Shuting down VirtualMachine')
-            out = ssh.run(
-                'sudo shutdown now', 
-            )
+            out = ssh.run('sudo shutdown now')
 
     if context.export:
         log.info('Exporting the box to %r', context.export)

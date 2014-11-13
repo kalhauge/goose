@@ -5,6 +5,11 @@ the *vbm, short for VBoxManage.
 
 from subprocess import Popen, call, check_output, PIPE, CalledProcessError, STDOUT, check_call
 
+import collections
+import re
+import os
+
+
 Nat = collections.namedtuple('Nat', 
     ('name', 'type', 'host_ip', 'host_port', 'client_ip', 'client_port')
 )

@@ -5,6 +5,8 @@ This is the library part of GoOSE.
 
 from functools import partial
 
+from subprocess import Popen, call, check_output, PIPE, CalledProcessError, STDOUT, check_call
+
 from random import randrange
 import time
 import threading
@@ -14,7 +16,7 @@ import os
 import sys
 import collections
 
-from virtualbox import vbm
+from virtualbox import vbm, Nat
 
 class SSHHandler:
 
