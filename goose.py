@@ -16,33 +16,28 @@ import os
 import sys
 import collections
 
-from virtualbox import vbm, Nat
+
+import warnings
+
+import logging
+log = logging.getLogger('goose')
 
 class SSHHandler:
 
-    def __init__(self, box, user, identity, close_on_end=0, port=None):
+    def __init__(self, box, user, password=None, identity=None, port=None):
         self.box = box
         self.user = user
+        self.password = password
         self.identity = identity
-        self.close_on_end = close_on_end
         self.port = port
-
-    def __enter__(self):
-        self.box.start(self.port)
-        return self
-
-    def __exit__(self, type, value, traceback):
-        if self.close_on_end:
-            Time.wait(self.close_on_end)
-            self.box.stop()
 
     def ssh_command(self, command):
         return (
             'ssh -p {port}'
             ' -o StrictHostKeyChecking=no' 
             ' -o UserKnownHostsFile=/dev/null'
-            ' -o LogLevel=quiet'
-            ' -i {identity}'
+            ' -o LogLevel=quiet' +
+            (' -i {identity}' if self.identity else '') + 
             ' {user}@127.0.0.1 {cmd!r}'
         ).format(
             port=self.box.port,
@@ -55,6 +50,11 @@ class SSHHandler:
 
         if stdin:
             p = Popen(cmd, universal_newlines=True, stdin=PIPE, stdout=PIPE, shell=True)
+            if not self.identity:
+                time.wait(1)
+                print(self.password)
+                p.stdin.write(self.password)
+                p.stdin.flush()
             for line in stdin:
                 print(line, file=p.stdin)
             p.stdin.close()
@@ -97,8 +97,8 @@ class SSHHandler:
                 'scp -r -P {port}'
                 ' -o StrictHostKeyChecking=no' 
                 ' -o UserKnownHostsFile=/dev/null'
-                ' -o LogLevel=quiet'
-                ' -i {identity}'
+                ' -o LogLevel=quiet' +
+                (' -i {identity}' if self.identity else '') +
                 ' {from_} {user}@127.0.0.1:{to}'
             ).format(
                 port=self.box.port,
@@ -114,8 +114,8 @@ class SSHHandler:
             'scp -r -P {port}'
             ' -o StrictHostKeyChecking=no' 
             ' -o UserKnownHostsFile=/dev/null'
-            ' -o LogLevel=quiet'
-            ' -i {identity}'
+            ' -o LogLevel=quiet' + 
+            (' -i {identity}' if self.identity else '') + 
             ' {user}@127.0.0.1:{from_} {to}'
         ).format(
             port=self.box.port,
@@ -150,110 +150,3 @@ def run_ssh(port, login, command, identity_file=None):
     cmd += ' '.join(command)
     call(cmd, shell=True)
 
-class Box:
-
-    def __init__(self, name, port=None, cpus=None, memory=None):
-        self._name = name
-        self._port = port
-        self._cpus = cpus
-        self._memory = memory
-
-    def start(self, port=None):
-        if not self.is_running():
-            self.port = port if not port is None else randrange(3000, 10000)
-            vbm.startvm(self.name, type='headless')
-        return self
-
-    def stop(self):
-        if self.is_running():
-            vbm.controlvm(self.name, 'poweroff')
-            self.port = None
-        return self
-
-    def get_ssh_handler(*args, **kwargs):
-        return SSHHandler(*args, **kwargs)
-
-    def ssh(self, login, command, identity_file=None):
-        run_ssh(self.port, login, command, identity_file)
-
-    def destroy(self):
-        if self.is_loaded():
-            vbm.unregistervm(self.name, delete=True) 
-        return self
-
-    def modify(self, **kwargs):
-        if self.is_running():
-            raise ValueError('VirtualMachine running, can not alter values')
-        vbm.modifyvm(self.name, **kwargs)
-        return self
-
-    def export(self, output):
-        vbm.export(self.name, output=output)
-
-    def is_running(self):
-        return self.name in vbm.running()
-
-    def is_loaded(self):
-        return self.name in vbm.vms()
-
-    def sync(self):
-        info = vbm.info(self.name)
-        port = None
-        for i in range(100):
-            name = 'Forwarding({})'.format(i)
-            if name in info:
-                nat = Nat(*info[name].split(','))
-                if nat.name == 'ssh' or nat.client_port == '22':
-                    port = int(nat.host_port)
-                    break
-            else:
-                break
-        self._port = port
-        self._memory = int(info['memory'])
-        self._cpus = int(info['cpus'])
-        return self
-  
-    def _set(name):
-        def func(self, attr):
-            local = '_' + name
-            if not getattr(self, local) == attr:
-                self.modify(**{name:attr})
-                setattr(self, local, attr)
-        return func
-
-    name = property(lambda self: self._name, _set('name'))
-    cpus = property(lambda self: self._cpus, _set('cpus'))
-    memory = property(lambda self: self._memory, _set('memory'))
-
-    def set_port(self, port):
-        if port == self._port:
-            return
-        elif port is None:
-            self.modify(natpf1=('delete', 'ssh'))
-        else:
-            if not self._port is None:
-                self.modify(natpf1=('delete', 'ssh'))
-            self.modify(natpf1="ssh,tcp,,{},,22".format(port))
-        self._port = port
-
-    port = property(lambda self: self._port, set_port)
-
-    def __repr__(self):
-        return 'Box(name={0.name!r}, port={0.port!r}, cpus={0.cpus!r}, memory={0.memory!r})'.format(self)
-
-    def __enter__(self):
-        return self.start()
-
-    def __exit__(self, type, value, traceback):
-        self.stop()
-        
-    @classmethod
-    def load(cls, filename):
-        return cls(vbm.import_(filename)).sync()
-
-    @classmethod
-    def find(cls, name):
-        if name in vbm.vms(): 
-            return Box(name).sync()
-        else:
-            raise ValueError('%r is not a file nor a virtual box' % name)

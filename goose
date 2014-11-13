@@ -1,16 +1,91 @@
-#!/usr/bin/env python3 
+#!/usr/bin/env python2.7 
 
-from goose import Box, vbm
+from gooselib import Box, vbm
 import sys
 import os
 import io
+
+from StringIO import StringIO
 
 from collections import namedtuple
 
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig()
 log = logging.getLogger('goose')
+log.setLevel(logging.DEBUG)
+
+logging.getLogger('paramiko').setLevel(logging.INFO)
+
+def main(commands):
+    log.debug('Parsing file:')
+    parser = Parser()
+    remote_commands = []
+    for command in commands:
+        command = command.strip()
+        if command.startswith('#goose'):
+            args = command.split()
+            parser.parse(*args[1:])
+        remote_commands += [command] 
+
+    log.debug('Parsing commandline arguments:')
+    for arg in sys.argv:
+        if arg.startswith('--'):
+            key, value = arg[2:].split('=')
+            parser.parse(key, *value.split(','))
+
+    context = parser.context
+
+    if context.export and not context.shutdown:
+        log.error('Can not export without shuting down')
+        sys.exit(-1)
+
+    if not (context.identity or context.password):
+        log.error('Neighter password or indentity set')
+        sys.exit(-1)
+    
+    log.debug('Starting box...')
+    
+    with get_box(context) as box:
+        ssh = box.get_ssh_handler(
+            username=context.user, 
+            password=context.password,
+            key_filename=context.identity,
+        ) 
+
+        log.info('Runing ssh on %r at port %r.' % (box.name, box.port))
+        
+        for require in context.require:
+            if not ssh.exists(require.remote):
+                log.debug('%r does not exist copying from %r', *require)
+                ssh.push(require.local, require.remote)
+            else:
+                log.debug('%r does allready exsits', require.remote)
+        
+        log.info('Copying over required files')
+
+        cmd_file = StringIO('\n'.join(remote_commands))
+
+        ssh.run('echo "hello"')
+
+        ssh.run('tee /tmp/last_cmds.sh | /bin/bash', in_=cmd_file)
+
+        for produce in context.produce:
+            if not ssh.exist(produce.remote):
+                log.error('%r does not exist.. %r not created.', *require)
+            else:
+                log.debug('Copying %s to %s.', *require)
+                ssh.pull(produce.remote, produce.local)
+
+        if context.shutdown:
+            log.info('Shuting down VirtualMachine')
+            out = ssh.run('sudo shutdown now')
+
+    if context.export:
+        log.info('Exporting the box to %r', context.export)
+        box.export(context.export)
+    
+    log.info('Done')
 
 def str2bool(v):
   return v.lower() in ("yes", "true", "t", "1") 
@@ -26,6 +101,8 @@ class Context():
         self.cpus = None
         self.memory = None
         self.email = None
+        self.password = None
+        self.identity = None
 
 class Parser:
 
@@ -54,6 +131,9 @@ class Parser:
     
     def memory(self, amount):
         self.context.memory = amount
+    
+    def password(self, string):
+        self.context.password = string
 
     def identity(self, filename):
         self.context.identity = os.path.abspath(filename)
@@ -74,8 +154,8 @@ class Parser:
             
 
 BaseImage = namedtuple('BaseImage', ['name', 'filename'])
-Require = namedtuple('Require', ['path', 'location'])
-Require = namedtuple('Produce', ['path', 'location'])
+Require = namedtuple('Require', ['local', 'remote'])
+Require = namedtuple('Produce', ['local', 'remote'])
 
 def get_box(context):
     try:
@@ -102,72 +182,15 @@ def get_box(context):
         box.memory = context.memory
     else:
         log.debug('No memory set, keeping: %s', box.memory)
+    box.close_on_end = context.shutdown
     log.info('Found box %r', box.name)
     return box
     
-def main(commands):
-    parser = Parser()
-    remote_commands = []
-    for command in commands:
-        command = command.strip()
-        if command.startswith('#goose'):
-            args = command.split()
-            parser.parse(*args[1:])
-        remote_commands += [command] 
-
-    for arg in sys.args:
-        if args.startswith('--'):
-            key, value = args[2:].split('=')
-            parser.parse(key, *value.split(','))
-
-    context = parser.context
-
-    box = get_box(context) 
-    
-    with box.get_ssh_handler(
-        context.user, context.identity, context.shutdown, 
-        port=context.port
-    ) as ssh:
-        log.info('Runing ssh on %r at port %r.' % (ssh.box.name, ssh.box.port))
-        
-        for require in context.require:
-            if not ssh.exists(require.path):
-                log.debug('%r does not exist copying from %r', *require)
-                ssh.copy(require.location, require.path)
-            else:
-                log.debug('%r does allready exsits', require.path)
-
-        out = ssh.run(
-            'tee /tmp/last_cmds.sh | /bin/bash', 
-            stdin=remote_commands
-        )
-
-        for line in out:
-            print(line[:-1])
-
-        log.info('Copying over required files')
-
-        for produce in context.produce:
-            if not ssh.exist(produce.path):
-                log.error('%r does not exist.. %r not created.', *require)
-            else:
-                log.debug('Copying %s to %s.', *require)
-                ssh.fetch(require.location, require.path)
-
-        if context.shutdown:
-            log.info('Shuting down VirtualMachine')
-            out = ssh.run('sudo shutdown now')
-
-    if context.export:
-        log.info('Exporting the box to %r', context.export)
-        box.export(contex.export)
-    
-    log.info('Done')
 
 
 if __name__ ==  '__main__':
-    if len(sys.argv) == 2:
-        with open(sys.argv[1]) as f:
+    if not sys.argv[-1].startswith('--'):
+        with open(sys.argv[-1]) as f:
             main(f)
     else:
         main(sys.stdin)
