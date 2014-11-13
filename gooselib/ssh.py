@@ -46,18 +46,16 @@ class SSHClient:
         stopped = threading.Event()
         def transfer(read, check, stream):
             def inner_function():
-                while not stopped:
-                    b = read(WINDOW_SIZE)
-                    stream.write('TEST\n')
-                    while b:
-                        stream.write(b)
-                        stream.flush()
-                        b = read(WINDOW_SIZE)
-                    stopped.wait(1)
-                while check:
-                    b = read(WINDOW_SIZE)
-                    stream.write(b)
+                while not stopped.is_set():
+                    while check():
+                        stream.write(read(WINDOW_SIZE))
                     stream.flush()
+                    stopped.wait(0.5)
+
+                while check():
+                    stream.write(read(WINDOW_SIZE))
+                    stream.flush()
+            
             return inner_function
        
         log.debug('Running %s', cmd)  
@@ -83,15 +81,13 @@ class SSHClient:
             log.debug('Still not ready')
             time.sleep(1)
             
-        log.debug('Done running')
         exit = chan.recv_exit_status() 
+        log.debug('Done running %s', exit)
         
         stopped.set()
 
         out_thread.join()
-        log.debug('out')
         err_thread.join()
-        log.debug('err')
 
         client.close()
         return exit 
