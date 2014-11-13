@@ -4,6 +4,7 @@ from gooselib import Box, vbm
 import sys
 import os
 import io
+import time
 
 from StringIO import StringIO
 
@@ -15,7 +16,7 @@ logging.basicConfig()
 log = logging.getLogger('goose')
 log.setLevel(logging.DEBUG)
 
-logging.getLogger('paramiko').setLevel(logging.INFO)
+# logging.getLogger('paramiko').setLevel(logging.INFO)
 
 def main(commands):
     log.debug('Parsing file:')
@@ -47,6 +48,9 @@ def main(commands):
     log.debug('Starting box...')
     
     with get_box(context) as box:
+        time.sleep(4) 
+    
+        log.debug('SSH into the box')
         ssh = box.get_ssh_handler(
             username=context.user, 
             password=context.password,
@@ -154,8 +158,8 @@ class Parser:
             
 
 BaseImage = namedtuple('BaseImage', ['name', 'filename'])
-Require = namedtuple('Require', ['local', 'remote'])
-Require = namedtuple('Produce', ['local', 'remote'])
+Require = namedtuple('Require', ['remote', 'local'])
+Require = namedtuple('Produce', ['remote', 'local'])
 
 def get_box(context):
     try:
@@ -183,7 +187,8 @@ def get_box(context):
     else:
         log.debug('No memory set, keeping: %s', box.memory)
     box.close_on_end = context.shutdown
-    log.info('Found box %r', box.name)
+    box.sync()
+    log.info('Found box %r', box)
     return box
     
 

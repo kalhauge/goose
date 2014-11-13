@@ -27,17 +27,19 @@ class SSHClient:
         self.password = password
         self.key_filename = key_filename
         self.cache = cache
-
-    def run(self, cmd, in_=None, out=sys.stdout, err=sys.stderr):
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy())
-        client.connect(
+        
+        self.client = paramiko.SSHClient()
+        self.client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy())
+        self.client.connect(
             self.hostname, self.port, self.username, 
             password=self.password,
-            key_filename=self.key_filename
+            key_filename=self.key_filename, 
+            timeout=10.0,
         )
 
-        chan = client.get_transport().open_session()
+    def run(self, cmd, in_=None, out=sys.stdout, err=sys.stderr):
+
+        chan = self.client.get_transport().open_session()
 
         ##chan.setblocking(1)
         ##chan.settimeout(1000) 
@@ -66,30 +68,32 @@ class SSHClient:
         err_thread = threading.Thread(
             target=transfer(chan.recv_stderr, chan.recv_stderr_ready, err))
 
-        out_thread.start()
-        err_thread.start()
-     
-        if in_:
-            b = in_.read(WINDOW_SIZE)
-            while b:
-                chan.sendall(b)
+        try:
+            out_thread.start()
+            err_thread.start()
+         
+            if in_:
                 b = in_.read(WINDOW_SIZE)
-            chan.shutdown_write()
-            log.debug('Done sending stdin')
-        
-        while not chan.exit_status_ready(): 
-            log.debug('Still not ready')
-            time.sleep(1)
+                while b:
+                    chan.sendall(b)
+                    b = in_.read(WINDOW_SIZE)
+                chan.shutdown_write()
             
-        exit = chan.recv_exit_status() 
-        log.debug('Done running %s', exit)
-        
-        stopped.set()
+            while not chan.exit_status_ready(): 
+                time.sleep(1)
+                
+            exit = chan.recv_exit_status() 
+        except:
+            log.debug('Error occured while runnig %s', cmd)
+            log.debug('Done running %s', exit)
+        finally:
+            stopped.set()
 
-        out_thread.join()
-        err_thread.join()
+            out_thread.join()
+            err_thread.join()
 
-        client.close()
+            chan.close()
+
         return exit 
 
     def exists(self, name):
@@ -98,25 +102,34 @@ class SSHClient:
         return val
 
     def push(self, local, remote):
-        if not os.path.exists(self.cache): os.mkdir(self.cache)
+        if os.path.isdir(local):
+            if not os.path.exists(self.cache): os.mkdir(self.cache)
 
-        cached_local = local.replace('/', '_') + '.tar.gz'
-        cached_file = os.path.join(self.cache, cached_local) 
-        
-        if not os.path.exists(cached_file):
-            tar = TarFile.open(cached_file, 'w:gz')
-            tar.add(os.path.realpath(local), arcname='.')
-            tar.close()
+            cached_local = local.replace('/', '_') + '.tar.gz'
+            cached_file = os.path.join(self.cache, cached_local) 
+            
+            if not os.path.exists(cached_file):
+                tar = TarFile.open(cached_file, 'w:gz')
+                tar.add(os.path.realpath(local), arcname='.')
+                tar.close()
 
-        with open(cached_file,'rb') as f:
-            return self.run(
-                'mkdir -p {0}; tar zxf - -C {0}'.format(remote),
-                in_=ProcessFile(f)
-            )
-
+            with open(cached_file,'rb') as f:
+                return self.run(
+                    'mkdir -p {0}; tar zxf - -C {0}'.format(remote),
+                    in_=ProcessFile(f)
+                )
+        else:
+            with open(local) as f:
+                return self.run(
+                    'cat > {0}'.format(remote),
+                    in_=ProcessFile(f)
+                )
 
     def pull(self, remote, local):
         return 0
+
+    def close(self):
+        return self.client.close()
 
 class ProcessFile:
 

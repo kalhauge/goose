@@ -1,10 +1,13 @@
 from .virtualbox import vbm, Nat
-from .ssh import SSHClient
+
+from random import randrange
+import warnings
+import time
 
 import logging
 log = logging.getLogger('goose.lib')
 
-class Box:
+class Box (object):
     
     @classmethod
     def load(cls, filename):
@@ -40,6 +43,7 @@ class Box:
         return self
 
     def get_ssh_handler(self, *args, **kwargs):
+        from .ssh import SSHClient
         return SSHClient('127.0.0.1', self.port, *args, **kwargs)
 
     def ssh(self, login, command, identity_file=None):
@@ -83,14 +87,14 @@ class Box:
         return self
   
     def _set(name):
+        local = '_' + name
         def func(self, attr):
-            local = '_' + name
             if not getattr(self, local) == attr:
                 try: 
                     self.modify(**{name:attr})
                     setattr(self, local, attr)
                 except ValueError as e:
-                    warnings.warn('Box is running, can not set {}'.format(name))
+                    warnings.warn('Box is running, can not set {}, {}'.format(name, e))
         return func
 
     name = property(lambda self: self._name, _set('name'))
@@ -119,7 +123,7 @@ class Box:
     def __exit__(self, type, value, traceback):
         if self.close_on_end:
             log.info('Closeing %s', self)
-            Time.wait(self.close_on_end)
+            time.sleep(self.close_on_end)
             self.stop()
         else:
             log.info('Leaving %s open', self)

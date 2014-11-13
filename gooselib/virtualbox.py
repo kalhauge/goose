@@ -9,6 +9,9 @@ import collections
 import re
 import os
 
+import logging
+
+log = logging.getLogger('goose.lib')
 
 Nat = collections.namedtuple('Nat', 
     ('name', 'type', 'host_ip', 'host_port', 'client_ip', 'client_port')
@@ -37,6 +40,7 @@ class VBoxMangage:
                 else:
                     cmd += ['--'+key, str(arg)]
             try:
+#                log.debug(cmd)
                 result = check_output(cmd, stderr=STDOUT, universal_newlines=True)
                 return result
             except CalledProcessError as e:
