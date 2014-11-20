@@ -117,12 +117,14 @@ class SSHClient:
         if os.path.isdir(local):
             if not os.path.exists(self.cache): os.mkdir(self.cache)
 
-            cached_local = local.replace('/', '_') + '.tar.gz'
+            cached_local = local.replace('/', '_')[1:] + '.tar.gz'
             cached_file = os.path.join(self.cache, cached_local) 
             
             if not os.path.exists(cached_file):
+                log.debug('Creating cache file %s', cached_file)
                 tar = TarFile.open(cached_file, 'w:gz')
                 tar.add(os.path.realpath(local), arcname='.')
+                log.debug('Done...')
                 tar.close()
 
             with open(cached_file,'r') as f:
