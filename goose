@@ -48,6 +48,8 @@ def main(commands):
     log.debug('Starting box...')
     
     with get_box(context) as box:
+        box.start(context.port)
+
         time.sleep(4) 
     
         log.debug('SSH into the box')
@@ -159,7 +161,7 @@ class Parser:
 
 BaseImage = namedtuple('BaseImage', ['name', 'filename'])
 Require = namedtuple('Require', ['remote', 'local'])
-Require = namedtuple('Produce', ['remote', 'local'])
+Produce = namedtuple('Produce', ['remote', 'local'])
 
 def get_box(context):
     try:
