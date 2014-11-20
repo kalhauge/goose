@@ -42,6 +42,10 @@ def main(commands):
     if context.export and not context.shutdown:
         log.error('Can not export without shuting down')
         sys.exit(-1)
+    
+    if not context.keep and not context.shutdown:
+        log.error('Can not destroy without shuting down')
+        sys.exit(-1)
 
     if not (context.identity or context.password):
         log.error('Neighter password or indentity set')
@@ -75,10 +79,10 @@ def main(commands):
         ssh.run('tee /tmp/last_cmds.sh | /bin/bash', in_=cmd_file)
 
         for produce in context.produce:
-            if not ssh.exist(produce.remote):
+            if not ssh.exists(produce.remote):
                 log.error('%r does not exist.. %r not created.', *require)
             else:
-                log.debug('Copying %s to %s.', *require)
+                log.debug('Copying %s to %s.', *produce)
                 ssh.pull(produce.remote, produce.local)
 
         if context.shutdown:
@@ -97,6 +101,7 @@ def main(commands):
 
 def str2bool(v):
   return v.lower() in ("yes", "true", "t", "1") 
+
 class Context():
     
     def __init__(self):
@@ -153,7 +158,7 @@ class Parser:
         self.context.reuse = str2bool(boolean) 
     
     def keep(self, boolean):
-        self.context.reuse = str2bool(boolean) 
+        self.context.keep = str2bool(boolean) 
     
     def shutdown(self, time):
         self.context.shutdown = int(time) 

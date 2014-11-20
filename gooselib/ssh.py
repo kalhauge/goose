@@ -5,6 +5,7 @@ import os
 import sys
 from io import StringIO 
 from tarfile import TarFile
+from functools import partial
 
 import time
 import threading
@@ -12,7 +13,7 @@ import paramiko
 
 import logging
 
-log = logging.getLogger('goose.lib')
+log = logging.getLogger('goose.lib.ssh')
 
 class SSHClient:
 
@@ -26,7 +27,11 @@ class SSHClient:
         self.password = password
         self.key_filename = key_filename
         self.cache = cache
+
+        self.new_client()
         
+
+    def new_client(self):
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy())
         self.client.connect(
@@ -36,7 +41,35 @@ class SSHClient:
             timeout=10.0,
         )
 
+    def _run(self, cmd, infile=None, outfile=sys.stdout, errfile=sys.stderr):
+
+        BLOCK_SIZE = 2048
+        def transfer(instream, outstream):
+            def inner_function():
+                for block in iter(partial(instream.read, BLOCK_SIZE), ''):
+                    outstream.write(block)
+            return inner_function
+
+        i, o, e = self.client.exec_command(cmd)
+
+        transfers = [transfer(infile, i)] if infile is not None else [] + [
+            transfer(o, outfile), 
+            transfer(e, errfile)
+        ]
+
+        threads = [threading.Thread(target=target) for target in transfers]
+
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+
+        return 0
+
     def run(self, cmd, in_=None, out=sys.stdout, err=sys.stderr):
+        return self.run2(cmd, in_, out, err)
+
+    def run2(self, cmd, in_=None, out=sys.stdout, err=sys.stderr):
+        
+        self.new_client()
 
         chan = self.client.get_transport().open_session()
 
@@ -67,25 +100,26 @@ class SSHClient:
         err_thread = threading.Thread(
             target=transfer(chan.recv_stderr, chan.recv_stderr_ready, err))
 
+        killall=False
         try:
             out_thread.start()
             err_thread.start()
          
             if in_:
-                b = in_.read(WINDOW_SIZE)
-                while b:
+                for b in iter(partial(in_.read, WINDOW_SIZE), ''):
+                    while not chan.send_ready(): pass 
                     chan.sendall(b)
-                    b = in_.read(WINDOW_SIZE)
                 chan.shutdown_write()
             
             while not chan.exit_status_ready(): 
                 time.sleep(1)
                 
-            exit = chan.recv_exit_status() 
-        except:
-            log.debug('Error occured while runnig %s', cmd)
-            log.debug('Done running %s', exit)
+        except Exception as e:
+            log.error('Error occured while runnnig %s %r', cmd, e)
+            killall = True
         finally:
+            exit = chan.recv_exit_status() 
+
             stopped.set()
 
             out_thread.join()
@@ -93,11 +127,16 @@ class SSHClient:
 
             chan.close()
 
+        in_.close()
+        log.debug('Done running %s', exit)
+
+        if killall: sys.exit(-1)
+
         return exit 
 
     def exists(self, name):
-        val = self.run('test -e {} && echo true || (echo false; false)'.format(name)) == 0
-        log.debug('exist, %s .. %s', name, val)
+        val = self.run('test -e {}'.format(name)) == 0
+        log.debug('%s does %sexists ..', name, '' if val else 'not ')
         return val
 
     def push(self, local, remote):
@@ -112,9 +151,10 @@ class SSHClient:
                 tar.add(os.path.realpath(local), arcname='.')
                 tar.close()
 
-            with open(cached_file,'rb') as f:
+            with open(cached_file,'r') as f:
+                self.run('mkdir -p {0}'.format(remote))
                 return self.run(
-                    'mkdir -p {0}; tar zxf - -C {0}'.format(remote),
+                    'tar zxf - -C {0}'.format(remote), 
                     in_=ProcessFile(f)
                 )
         else:
@@ -126,10 +166,17 @@ class SSHClient:
 
     def pull(self, remote, local):
         with open(local, 'w') as f:
-            return self.run(
-                'cat {0}'.format(remote),
+            a = self.run(
+                'pv {0}'.format(remote),
                 out=f
             )
+        if a != 0:
+            with open(local, 'w') as f:
+                a = self.run(
+                    'cat {0}'.format(remote),
+                    out=f
+                )
+        return a
 
     def close(self):
         return self.client.close()
@@ -138,6 +185,7 @@ class ProcessFile:
 
     def __init__(self, i):
         self.i = i
+        self.progress = ''
         i.seek(0, os.SEEK_END)
         self.size = i.tell()
         i.seek(0, os.SEEK_SET)
@@ -145,7 +193,11 @@ class ProcessFile:
     def read(self, size):
         b = self.i.read(size)
         if b:
-            sys.stderr.write('Progress: {:0.2f}%\r'.format(self.i.tell()/self.size * 100))
+            progress ='{:0.1f}'.format(self.i.tell() / float(self.size) * 100)
+            if progress != self.progress:
+                self.progress = progress
+                sys.stderr.write('\rProgress: {}%'.format(progress))
+                sys.stderr.flush()
         return b
        
     def close(self):
