@@ -126,7 +126,11 @@ class SSHClient:
                 )
 
     def pull(self, remote, local):
-        return 0
+        with open(local, 'w') as f:
+            return self.run(
+                'cat {0}'.format(remote),
+                out=f
+            )
 
     def close(self):
         return self.client.close()
