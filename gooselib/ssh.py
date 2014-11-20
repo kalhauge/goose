@@ -41,33 +41,7 @@ class SSHClient:
             timeout=10.0,
         )
 
-    def _run(self, cmd, infile=None, outfile=sys.stdout, errfile=sys.stderr):
-
-        BLOCK_SIZE = 2048
-        def transfer(instream, outstream):
-            def inner_function():
-                for block in iter(partial(instream.read, BLOCK_SIZE), ''):
-                    outstream.write(block)
-            return inner_function
-
-        i, o, e = self.client.exec_command(cmd)
-
-        transfers = [transfer(infile, i)] if infile is not None else [] + [
-            transfer(o, outfile), 
-            transfer(e, errfile)
-        ]
-
-        threads = [threading.Thread(target=target) for target in transfers]
-
-        for thread in threads: thread.start()
-        for thread in threads: thread.join()
-
-        return 0
-
     def run(self, cmd, in_=None, out=sys.stdout, err=sys.stderr):
-        return self.run2(cmd, in_, out, err)
-
-    def run2(self, cmd, in_=None, out=sys.stdout, err=sys.stderr):
         
         self.new_client()
 
@@ -127,7 +101,7 @@ class SSHClient:
 
             chan.close()
 
-        in_.close()
+        if in_ is not None: in_.close()
         log.debug('Done running %s', exit)
 
         if killall: sys.exit(-1)

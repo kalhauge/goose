@@ -200,7 +200,7 @@ def get_box(context):
 
     if context.port: box.port = context.port
     else: 
-        box.port = randrange(3000, 10000)
+        box.port = randrange(10000, 30000)
         log.debug('No port set, choosing: %s', box.port)
 
     box.close_on_end = context.shutdown
