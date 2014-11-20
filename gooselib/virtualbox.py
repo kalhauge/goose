@@ -11,7 +11,7 @@ import os
 
 import logging
 
-log = logging.getLogger('goose.lib')
+log = logging.getLogger('goose.lib.vboxmanage')
 
 Nat = collections.namedtuple('Nat', 
     ('name', 'type', 'host_ip', 'host_port', 'client_ip', 'client_port')
@@ -40,7 +40,7 @@ class VBoxMangage:
                 else:
                     cmd += ['--'+key, str(arg)]
             try:
-#                log.debug(cmd)
+                log.debug(' '.join(cmd))
                 result = check_output(cmd, stderr=STDOUT, universal_newlines=True)
                 return result
             except CalledProcessError as e:
@@ -54,7 +54,7 @@ class VBoxMangage:
         filename = os.path.realpath(filename)
         if not os.path.exists(filename): 
             raise ValueError('{!r} does not exist'.format(filename))
-        output = self.__getattr__('import')(filename)
+        output = self.__getattr__('import')(filename, options='keepallmacs')
         mo = re.search(r'Suggested VM name "(.+)"', output, re.MULTILINE)
         return mo.group(1) if mo else None
 

@@ -1,8 +1,11 @@
 from .virtualbox import vbm, Nat
 
-from random import randrange
 import warnings
 import time
+
+import subprocess
+
+from random import randrange
 
 import logging
 log = logging.getLogger('goose.lib')
@@ -30,10 +33,19 @@ class Box (object):
         self._memory = memory
         self.close_on_end = 0
 
-    def start(self, port=None):
+    def start(self):
+        log.debug('Starting %s at %s ..', self, self.port)
         if not self.is_running():
-            self.port = port if not port is None else randrange(3000, 10000)
+            if self.port is None:
+                self.port = randrange(3000,10000)
+            log.debug('Not allready running')
             vbm.startvm(self.name, type='headless')
+            log.debug('Waiting for boot...')
+            time.sleep(4)
+            log.debug('Boot done.. ')
+        else:
+            log.debug('Already started at %s...', self.port)
+        log.debug('Sucesfully started %s.. ', self)
         return self
 
     def stop(self):
@@ -47,7 +59,13 @@ class Box (object):
         return SSHClient('127.0.0.1', self.port, *args, **kwargs)
 
     def ssh(self, login, command, identity_file=None):
-        run_ssh(self.port, login, command, identity_file)
+        if not self.is_running(): raise ValueError('Box not running..')
+        cmd = (['ssh'] + 
+            ['-p' , str(self.port)] +
+            (['-i', identity_file] if identity_file else []) + 
+            ['{}@127.0.0.1'.format(login)] + command)
+        log.debug('Starting ssh with cmd: %s', ' '.join(cmd))
+        subprocess.call(cmd) 
 
     def destroy(self):
         if self.is_loaded():
@@ -107,7 +125,7 @@ class Box (object):
         elif port is None:
             self.modify(natpf1=('delete', 'ssh'))
         else:
-            if not self._port is None:
+            if not self._port is None: 
                 self.modify(natpf1=('delete', 'ssh'))
             self.modify(natpf1="ssh,tcp,,{},,22".format(port))
         self._port = port

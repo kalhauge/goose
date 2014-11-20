@@ -6,6 +6,8 @@ import os
 import io
 import time
 
+from random import randrange
+
 from StringIO import StringIO
 
 from collections import namedtuple
@@ -45,12 +47,10 @@ def main(commands):
         log.error('Neighter password or indentity set')
         sys.exit(-1)
     
-    log.debug('Starting box...')
+    log.debug('Loading box...')
     
     with get_box(context) as box:
-        box.start(context.port)
-
-        time.sleep(4) 
+        log.debug('Boot done..')
     
         log.debug('SSH into the box')
         ssh = box.get_ssh_handler(
@@ -72,8 +72,6 @@ def main(commands):
 
         cmd_file = StringIO('\n'.join(remote_commands))
 
-        ssh.run('echo "hello"')
-
         ssh.run('tee /tmp/last_cmds.sh | /bin/bash', in_=cmd_file)
 
         for produce in context.produce:
@@ -84,12 +82,16 @@ def main(commands):
                 ssh.pull(produce.remote, produce.local)
 
         if context.shutdown:
-            log.info('Shuting down VirtualMachine')
+            log.info('Shuting down VirtualMachine..')
             out = ssh.run('sudo shutdown now')
 
     if context.export:
         log.info('Exporting the box to %r', context.export)
         box.export(context.export)
+
+    if not context.keep:
+        log.info('Destroying the box %s', box)
+        box.destroy()
     
     log.info('Done')
 
@@ -101,6 +103,7 @@ class Context():
         self.require = list()
         self.produce = list()
         self.reuse = True
+        self.keep = False
         self.shutdown = 0
         self.export = None
         self.port = None
@@ -149,6 +152,9 @@ class Parser:
     def reuse(self, boolean):
         self.context.reuse = str2bool(boolean) 
     
+    def keep(self, boolean):
+        self.context.reuse = str2bool(boolean) 
+    
     def shutdown(self, time):
         self.context.shutdown = int(time) 
 
@@ -180,14 +186,18 @@ def get_box(context):
             box.destroy()
             box = Box.load(context.baseimage.filename)
             box.name = context.baseimage.name
-    if context.cpus: 
-        box.cpus = context.cpus
-    else:
-        log.debug('No CPUs set, keeping: %s', box.cpus)
-    if context.memory: 
-        box.memory = context.memory
-    else:
-        log.debug('No memory set, keeping: %s', box.memory)
+    
+    if context.cpus: box.cpus = context.cpus
+    else: log.debug('No CPUs set, keeping: %s', box.cpus)
+
+    if context.memory: box.memory = context.memory
+    else: log.debug('No memory set, keeping: %s', box.memory)
+
+    if context.port: box.port = context.port
+    else: 
+        box.port = randrange(3000, 10000)
+        log.debug('No port set, choosing: %s', box.port)
+
     box.close_on_end = context.shutdown
     box.sync()
     log.info('Found box %r', box)

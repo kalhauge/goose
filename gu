@@ -10,6 +10,10 @@ Simple to use and change.
 
 from gooselib import Box, vbm
 
+import logging
+
+logging.basicConfig(level='DEBUG')
+
 def vms():
     for x in vbm.vms():
         print(x)
@@ -38,11 +42,8 @@ def login(
     id: str=None, 
 ):
     box = Box.find(name)
-    if box.is_running():
+    with box:
         box.ssh(login, [], id)
-    else:
-        with box:
-            box.ssh(login, [], id)
 
 def load(
     filename: str,

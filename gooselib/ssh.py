@@ -3,8 +3,7 @@ Adding ssh connections to the boxes
 """
 import os
 import sys
-
-from io import StringIO
+from io import StringIO 
 from tarfile import TarFile
 
 import time
@@ -97,7 +96,7 @@ class SSHClient:
         return exit 
 
     def exists(self, name):
-        val = self.run('test -e {}'.format(name)) == 0
+        val = self.run('test -e {} && echo true || (echo false; false)'.format(name)) == 0
         log.debug('exist, %s .. %s', name, val)
         return val
 
