@@ -51,6 +51,8 @@ class Box (object):
     def stop(self):
         if self.is_running():
             vbm.controlvm(self.name, 'poweroff')
+            # Wait for shutdown
+            while self.is_running(): time.sleep(1)
             self.port = None
         return self
 
@@ -68,6 +70,7 @@ class Box (object):
         subprocess.call(cmd) 
 
     def destroy(self):
+        self.stop()
         if self.is_loaded():
             vbm.unregistervm(self.name, delete=True) 
         return self

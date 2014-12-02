@@ -55,14 +55,10 @@ class SSHClient:
         def transfer(read, check, stream):
             def inner_function():
                 while not stopped.is_set():
-                    while check():
+                    while check() and not stopped.is_set():
                         stream.write(read(WINDOW_SIZE))
                     stream.flush()
                     stopped.wait(0.5)
-
-                while check():
-                    stream.write(read(WINDOW_SIZE))
-                    stream.flush()
             
             return inner_function
        
@@ -89,7 +85,7 @@ class SSHClient:
                 time.sleep(1)
                 
         except Exception as e:
-            log.error('Error occured while runnnig %s %r', cmd, e)
+            log.error('Error occured while runnning %s %r', cmd, e)
             killall = True
         finally:
             exit = chan.recv_exit_status() 
@@ -104,7 +100,6 @@ class SSHClient:
         if in_ is not None: in_.close()
         log.debug('Done running %s', exit)
 
-        if killall: sys.exit(-1)
 
         return exit 
 
