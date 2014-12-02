@@ -154,7 +154,7 @@ def get_context(lines):
             log.error("Can't export without shutdown")
             sys.exit(1)
     
-    if not (context.password or context.indentity):
+    if not (context.password or context.identity):
         log.error("Eighter password or identity should be set") 
         sys.exit(1)
 
