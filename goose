@@ -1,6 +1,6 @@
 #!/usr/bin/env python2.7 
 
-from gooselib import Box, vbm, Parser, str2bool
+from gooselib import Box, vbm, Parser, str2bool, Rule
 import sys
 import os
 import io
@@ -21,8 +21,7 @@ log.setLevel(logging.DEBUG)
 def main(fileo):
     lines = fileo.readlines()
     context = get_context(lines)
-    box = get_box(context) 
-
+    
     with get_box(context) as box:
         ssh = box.get_ssh_handler(
             username=context.user, 
@@ -41,7 +40,7 @@ def main(fileo):
         
         log.info('Copying over required files')
 
-        cmd_file = StringIO('\n'.join(lines))
+        cmd_file = StringIO(''.join(lines))
         retval = ssh.run('tee /tmp/last_cmds.sh | /bin/bash', in_=cmd_file)
 
         if retval == 0:
@@ -55,11 +54,13 @@ def main(fileo):
             if context.shutdown:
                 log.info('Shuting down VirtualMachine..')
                 out = ssh.run('sudo shutdown now')
+        else:
+            box.close_on_end = 0
 
     if retval != 0: 
         log.error(
             'Recieved return value %s, exiting without destroying, exporting'
-            'or shuting down the machine', 
+            ' or shuting down the machine.', 
             retval
         )
         sys.exit(retval)
@@ -121,7 +122,7 @@ Produce = namedtuple('Produce', ['remote', 'local'])
 parser = Parser.from_rules([
     Rule('require', Require, [], '*'),
     Rule('produce', Produce, [], '*'),
-    Rule('baseimage', BaseImage, [], '*'),
+    Rule('baseimage', BaseImage),
     Rule('reuse', str2bool, False),
     Rule('keep', str2bool, False), 
     Rule('port', int, 0),
@@ -138,6 +139,15 @@ def get_context(lines):
     parser.handle_lines(lines, prefix="#goose")
     parser.handle_commandline()
     context = parser.context
+
+    if not context.baseimage:
+        log.error("Baseimage must be set")
+        sys.exit(1)
+
+    for require in context.require:
+        if not os.path.exists(require.local):
+            log.error("Could not find file %s", require.local)
+            sys.exit(1)
 
     if not context.shutdown:
         if context.export:

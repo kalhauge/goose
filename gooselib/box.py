@@ -38,14 +38,14 @@ class Box (object):
         if not self.is_running():
             if self.port is None:
                 self.port = randrange(10000, 30000)
-            log.debug('Not allready running')
+            log.debug('Not already running')
             vbm.startvm(self.name, type='headless')
             log.debug('Waiting for boot...')
             time.sleep(6)
             log.debug('Boot done.. ')
         else:
             log.debug('Already started at %s...', self.port)
-        log.debug('Sucesfully started %s.. ', self)
+        log.debug('Successfully started %s.. ', self)
         return self
 
     def stop(self):
