@@ -1,7 +1,6 @@
 #!/usr/bin/env python2.7 
 
-from gooselib import Box, vbm
-import gooselib
+from gooselib import Box, vbm, Parser, str2bool
 import sys
 import os
 import io
@@ -119,12 +118,12 @@ BaseImage = namedtuple('BaseImage', ['name', 'filename'])
 Require = namedtuple('Require', ['remote', 'local'])
 Produce = namedtuple('Produce', ['remote', 'local'])
 
-parser = gooselib.parser.Parser.from_rules([
+parser = Parser.from_rules([
     Rule('require', Require, [], '*'),
     Rule('produce', Produce, [], '*'),
     Rule('baseimage', BaseImage, [], '*'),
-    Rule('reuse', gooselib.parser.str2bool, False),
-    Rule('keep', gooselib.parser.str2bool, False),
+    Rule('reuse', str2bool, False),
+    Rule('keep', str2bool, False), 
     Rule('port', int, 0),
     Rule('cpus', int, 0),
     Rule('memory', int, 0),
