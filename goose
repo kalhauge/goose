@@ -19,9 +19,11 @@ log = logging.getLogger('goose')
 log.setLevel(logging.DEBUG)
 
 def main(fileo):
+    log.info("Started GOOSE %s", fileo)
     lines = fileo.readlines()
+    log.info("%s lines read.", len(lines))
     context = get_context(lines)
-    
+    log.info("%s", context)
     with get_box(context) as box:
         ssh = box.get_ssh_handler(
             username=context.user, 

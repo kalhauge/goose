@@ -32,13 +32,16 @@ class Rule (object):
         self.location = location if location else name
 
     def handle(self, context, args):
-        if self.nargs in ('*', '+'):
-            if not hasattr(context, self.location):
-                setattr(context, self.location, [])
-            getattr(context, self.location).append(self.parse(*args))
-        else:
-            setattr(context, self.location, self.parse(*args))
-
+        try:
+            if self.nargs in ('*', '+'):
+                if not hasattr(context, self.location):
+                    setattr(context, self.location, [])
+                getattr(context, self.location).append(self.parse(*args))
+            else:
+                setattr(context, self.location, self.parse(*args))
+        except Exception as e:
+            log.error("Error found in %s %s", self, args)
+            raise e
     def ensure_default(self, context):
         if not hasattr(context, self.location):
             setattr(context, self.location, self.default)
@@ -64,7 +67,7 @@ class Parser (object):
         for arg in args:
             if not arg.startswith('--'): continue
             cmd, cmd_args = arg[2:].split('=')
-            self.parse([cmd] + cmd_args.split(','))
+            self.parse([cmd] + cmd_args.rsplit(',', 1))
 
     def parse(self, words):
         log.debug('Parsing words: %s', words)
