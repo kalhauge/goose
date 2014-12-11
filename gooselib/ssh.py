@@ -31,15 +31,28 @@ class SSHClient:
         self.new_client()
         
 
-    def new_client(self):
+    def new_client(self, timeout=100.0):
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy())
-        self.client.connect(
-            self.hostname, self.port, self.username, 
-            password=self.password,
-            key_filename=self.key_filename, 
-            timeout=10.0,
-        )
+        start = time.time()
+        while True:
+            try:
+                self.client.connect(
+                    self.hostname, self.port, self.username, 
+                    password=self.password,
+                    key_filename=self.key_filename, 
+                    timeout=10.0,
+                )
+            except paramiko.SSHException:
+                log.info('Opening connection to %s %s failed...', 
+                    self.hostname, self.port)
+                if start - time.time() < timeout:
+                    log.info("Trying again in 5s ..")
+                    time.sleep(5)
+                else:
+                    log.error('Timeout occured')
+            else:
+                return
 
     def run(self, cmd, in_=None, out=sys.stdout, err=sys.stderr):
         
